@@ -1,55 +1,83 @@
 import youtubedl from 'youtube-dl-exec';
 import path from "path";
 import fs from 'fs';
-export class YoutubeService{
+import { BadRequestError } from '../errors/BadRequestError';
+import { AppError } from '../errors/AppError';
 
-  public async getInfoMusic(url : string){
-    try{
-        const info = await youtubedl(url,{
-          dumpSingleJson:true,
-          noCheckCertificates:true,
-          noWarnings:true,
-          preferFreeFormats:true,
-          addHeader:['referer:youtube.com', 'user-agent:googlebot']
-        })
-        return info;
-    }catch (error: unknown) {
+export class YoutubeService {
 
-      if (error instanceof Error) {
-        console.error(`[YoutubeService] Error in GetInfoMusic: ${error.message}`);
-        throw error; 
-      }
-      console.error(`[YoutubeService] Unknown Error:`, error);
-      throw new Error('Ocorreu um erro desconhecido ao processar a URL.');
+  public async getInfoMusic(url: string) {
+    if (!url) {
+      throw new BadRequestError(
+        'The URL was not included in the request.',
+        { field: 'url' },
+        'URL_MISSING'
+      );
+    }
+
+    try {
+      return await youtubedl(url, {
+        dumpSingleJson: true,
+        noCheckCertificates: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        addHeader: ['referer:youtube.com', 'user-agent:googlebot']
+      });
+
+    } catch (error) {
+      console.error('[YoutubeService] getInfoMusic error:', error);
+
+      throw new AppError({
+        message: 'Failed to fetch video information.',
+        statusCode: 502,
+        code: 'YOUTUBE_INFO_ERROR',
+        details: error instanceof Error ? error.message : error
+      });
     }
   }
 
-    public async donwloadAudio(url : string){
-    try{
-      const destinationDirectory = path.resolve(__dirname,'../../temp');
+  public async downloadAudio(url: string) {
+    if (!url) {
+      throw new BadRequestError(
+        'The URL was not included in the request.',
+        { field: 'url' },
+        'URL_MISSING'
+      );
+    }
 
-      if(!fs.existsSync(destinationDirectory)){
-        fs.mkdirSync(destinationDirectory,{ recursive:true });
-      }
+    const destinationDirectory = path.resolve(__dirname, '../../temp');
 
-      const nameId = Date.now().toString();
-      const filePathOnServer = path.join(destinationDirectory,`${nameId}`);
+    if (!fs.existsSync(destinationDirectory)) {
+      fs.mkdirSync(destinationDirectory, { recursive: true });
+    }
 
-      console.log(`Starting download on the server...`)
+    const fileId = Date.now().toString();
+    const filePathOnServer = path.join(destinationDirectory, fileId);
 
-      await youtubedl(url,{
-        extractAudio:true,
-        audioFormat:'mp3',
+    try {
+      await youtubedl(url, {
+        extractAudio: true,
+        audioFormat: 'mp3',
         audioQuality: 0,
         output: filePathOnServer,
-        noCheckCertificates:true,
-        noWarnings:true
-      })
+        noCheckCertificates: true,
+        noWarnings: true
+      });
 
-      return filePathOnServer;
+      return {
+        fileId,
+        path: filePathOnServer
+      };
 
-    }catch(error:unknown){
+    } catch (error) {
+      console.error('[YoutubeService] downloadAudio error:', error);
 
+      throw new AppError({
+        message: 'Failed to download audio.',
+        statusCode: 502,
+        code: 'YOUTUBE_DOWNLOAD_ERROR',
+        details: error instanceof Error ? error.message : error
+      });
     }
   }
 }
